@@ -57,9 +57,15 @@ func (s *setup) run() int {
 
 	// Step 1
 	_, _ = fmt.Fprintln(s.out, "")
-	_, _ = fmt.Fprintln(s.out, "Step 1/4 — Create the GitHub App")
-	_, _ = fmt.Fprintln(s.out, "  Open this URL (replace YOUR-ORG):")
-	_, _ = fmt.Fprintln(s.out, "    https://github.com/organizations/YOUR-ORG/settings/apps/new")
+	_, _ = fmt.Fprintln(s.out, "Step 1/4 — Create your GitHub App (one App per person, recommended)")
+	_, _ = fmt.Fprintln(s.out, "  Per-person Apps give each developer their own bot identity")
+	_, _ = fmt.Fprintln(s.out, "  (e.g. `<your-username>-claude[bot]`), so PR comments are attributed")
+	_, _ = fmt.Fprintln(s.out, "  to whoever's session produced them. No shared private keys.")
+	_, _ = fmt.Fprintln(s.out, "")
+	_, _ = fmt.Fprintln(s.out, "  Open this URL (creates the App under YOUR account):")
+	_, _ = fmt.Fprintln(s.out, "    https://github.com/settings/apps/new")
+	_, _ = fmt.Fprintln(s.out, "")
+	_, _ = fmt.Fprintln(s.out, "  Suggested name: <your-username>-claude")
 	_, _ = fmt.Fprintln(s.out, "")
 	_, _ = fmt.Fprintln(s.out, "  Required Repository permissions:")
 	_, _ = fmt.Fprintln(s.out, "    - Pull requests:  Read & write   (post reviews / review comments)")
@@ -67,12 +73,17 @@ func (s *setup) run() int {
 	_, _ = fmt.Fprintln(s.out, "    - Issues:         Read & write   (post issue / PR conversation comments)")
 	_, _ = fmt.Fprintln(s.out, "")
 	_, _ = fmt.Fprintln(s.out, "  Webhook: uncheck \"Active\" — we don't use webhooks.")
+	_, _ = fmt.Fprintln(s.out, "  \"Where can this GitHub App be installed?\": Any account.")
 	_, _ = fmt.Fprintln(s.out, "")
 	_, _ = fmt.Fprintln(s.out, "  After saving the App:")
 	_, _ = fmt.Fprintln(s.out, "    a) Generate a private key (.pem) and download it.")
 	_, _ = fmt.Fprintln(s.out, "    b) Install the App on the org/repos that should accept bot reviews.")
 	_, _ = fmt.Fprintln(s.out, "    c) Note the App ID (App settings header) and installation ID")
 	_, _ = fmt.Fprintln(s.out, "       (visible in the URL after install: .../installations/<id>/...)")
+	_, _ = fmt.Fprintln(s.out, "")
+	_, _ = fmt.Fprintln(s.out, "  (Want a shared org-owned bot instead? Use")
+	_, _ = fmt.Fprintln(s.out, "   https://github.com/organizations/<your-org>/settings/apps/new — but")
+	_, _ = fmt.Fprintln(s.out, "   you lose per-person attribution and share one private key.)")
 	_, _ = fmt.Fprintln(s.out, "")
 
 	appID, err := s.requirePrompt("App ID (numeric)")
@@ -139,14 +150,11 @@ func (s *setup) run() int {
 	// Step 4
 	_, _ = fmt.Fprintln(s.out, "")
 	_, _ = fmt.Fprintln(s.out, "Step 4/4 — Shell configuration")
-	_, _ = fmt.Fprintln(s.out, "  Add this to your shell profile (~/.zshrc or ~/.bashrc):")
+	shell := detectShell()
+	_, _ = fmt.Fprintf(s.out, "  Add this to your shell profile (%s):\n", shell.rcDescription)
 	_, _ = fmt.Fprintln(s.out, "")
-	_, _ = fmt.Fprintf(s.out, "    export GH_AS_BOT_APP_ID=%s\n", appID)
-	_, _ = fmt.Fprintf(s.out, "    export GH_AS_BOT_INSTALLATION_ID=%s\n", instID)
-	if strings.HasPrefix(keyRef, "$(") {
-		_, _ = fmt.Fprintf(s.out, "    export GH_AS_BOT_PRIVATE_KEY=\"%s\"\n", keyRef)
-	} else {
-		_, _ = fmt.Fprintf(s.out, "    export GH_AS_BOT_PRIVATE_KEY=%s\n", keyRef)
+	for _, line := range shell.exportLines(appID, instID, keyRef) {
+		_, _ = fmt.Fprintf(s.out, "    %s\n", line)
 	}
 	_, _ = fmt.Fprintln(s.out, "")
 	_, _ = fmt.Fprintln(s.out, "  Open a fresh shell (or `source` your profile), then verify:")
