@@ -63,10 +63,25 @@ export GH_AS_BOT_PRIVATE_KEY="$(security find-generic-password -s gh-as-bot -w)"
 export GH_AS_BOT_PRIVATE_KEY="$(op read 'op://Private/gh-as-bot/private-key')"
 ```
 
+## One App per person (recommended)
+
+`gh as-bot` is designed for the **per-person** pattern: each developer creates their own GitHub App under their personal account, with a name like `<your-username>-claude`. PR comments are then attributed to e.g. `hinne-claude[bot]` vs `marcus-claude[bot]`, so it's always clear whose Claude Code session produced a review.
+
+Why per-person:
+
+- **Attribution.** Reviews link back to the person whose context produced them — important when bot output is shaped by individual project memory and prompts.
+- **Blast radius.** Revoking one developer's App or rotating their key affects only them.
+- **Self-service.** No org admin coordination needed to onboard a new dev.
+- **No shared private key.** Each dev controls and stashes their own `.pem`.
+
+Trade-off: N Apps to manage instead of one shared bot. For a small team this is barely visible; for a large team you may prefer a shared org-owned App, in which case use `https://github.com/organizations/<your-org>/settings/apps/new` instead — `gh as-bot` itself works identically either way.
+
 ## GitHub App reference
 
 `gh as-bot setup` covers this interactively. For reference, the App needs:
 
+- **Owner**: your personal account (per-person) or your org (shared bot).
+- **"Where can this GitHub App be installed?"**: Any account — so personal Apps can still install on org repos.
 - **Repository permissions**:
   - `Pull requests: Read & write` — post reviews and review comments
   - `Contents: Read` — `gh` needs this for most read paths
@@ -75,7 +90,7 @@ export GH_AS_BOT_PRIVATE_KEY="$(op read 'op://Private/gh-as-bot/private-key')"
 - **Private key**: generate from App settings → "Private keys". The `.pem` is shown once; setup helps you stash it.
 - **Install** the App on the repos that should accept bot reviews.
 
-The bot identity that posts reviews will be `<app-slug>[bot]` (e.g. `negsoft-claude[bot]`).
+The bot identity that posts reviews will be `<app-slug>[bot]` (e.g. `hinne-claude[bot]`).
 
 ## Why not just `gh auth switch`?
 
