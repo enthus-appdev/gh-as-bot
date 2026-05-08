@@ -32,6 +32,21 @@ jobs:
           skip-cache: true
           problem-matchers: true
 
+  license:
+    name: License Check
+    runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: ./go.mod
+          cache: false
+      - name: Validate dependency licenses
+        uses: enthus-appdev/oss-actions/go-license-validator@v1
+        with:
+          forbidden_licenses: "GPL-3.0;GPL-2.0;LGPL-3.0;LGPL-2.1;AGPL-3.0;SSPL-1.0;BUSL-1.1;Elastic-2.0;Commons-Clause"
+
   test:
     name: Go Test
     runs-on: ubuntu-latest
