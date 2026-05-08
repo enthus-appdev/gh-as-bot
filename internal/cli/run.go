@@ -16,6 +16,7 @@ import (
 const usage = `gh as-bot — run gh authenticated as a GitHub App installation.
 
 Usage:
+  gh as-bot setup            Walk through GitHub App configuration (start here)
   gh as-bot <gh args...>     Run gh with bot credentials
   gh as-bot --token          Print a fresh installation token to stdout
   gh as-bot doctor           Verify config and credentials
@@ -35,7 +36,7 @@ Example:
 
 // Run dispatches the gh-as-bot subcommand. Splitting it from main lets
 // tests drive the binary without forking, and matches gh-attach's layout.
-func Run(args []string, stdout, stderr io.Writer) int {
+func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
 		fmt.Fprint(stderr, usage)
 		return 2
@@ -44,6 +45,8 @@ func Run(args []string, stdout, stderr io.Writer) int {
 	case "help", "-h", "--help":
 		fmt.Fprint(stdout, usage)
 		return 0
+	case "setup":
+		return runSetup(stdin, stdout, stderr)
 	case "--token":
 		return runToken(stdout, stderr)
 	case "doctor":

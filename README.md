@@ -4,10 +4,19 @@ A [gh](https://cli.github.com/) extension that runs `gh` authenticated as a GitH
 
 Built for the case where Claude Code (or any local automation with full project context) needs to leave reviews on a PR that are visually and programmatically distinguishable from human reviews — without disturbing your day-to-day `gh auth` state.
 
-## Install
+## Quickstart
 
 ```bash
 gh extension install enthus-appdev/gh-as-bot
+gh as-bot setup
+```
+
+`gh as-bot setup` walks you through creating the GitHub App, points you at the right URLs with the required permissions called out, verifies your credentials by minting a real installation token, optionally stashes the private key in your macOS keychain, and prints the exact shell-profile snippet to paste into `~/.zshrc`.
+
+After setup, verify with:
+
+```bash
+gh as-bot doctor
 ```
 
 ## Usage
@@ -24,58 +33,47 @@ gh as-bot --token
 # Verify config and credentials
 gh as-bot doctor
 
+# Re-run guided setup
+gh as-bot setup
+
 # Help
 gh as-bot help
 ```
 
 `gh as-bot <args>` mints a fresh installation access token, sets `GH_TOKEN` for the duration of the call, and `exec`s `gh` with your arguments. Your persistent `gh auth` (the "me" account) is never touched — open a new shell and you're still you.
 
-## Configuration
+## Configuration reference
 
-`gh-as-bot` reads three environment variables:
+`gh as-bot setup` writes the env vars below for you. If you'd rather configure manually:
 
 | Variable | Description |
 |----------|-------------|
 | `GH_AS_BOT_APP_ID` | Numeric App ID from the GitHub App settings page |
 | `GH_AS_BOT_INSTALLATION_ID` | Numeric installation ID for the org/account where the App is installed |
 | `GH_AS_BOT_PRIVATE_KEY` | Either inline PEM contents (starting with `-----BEGIN`) or a path to a `.pem` file |
+| `GITHUB_API_URL` | Optional; override API base for GHES |
 
-### Recommended: keychain or 1Password CLI
-
-Don't keep the private key on disk in plaintext. Source it just-in-time:
+Recommended sourcing patterns for the private key (don't keep `.pem` on disk in plaintext):
 
 ```bash
-# macOS keychain
+# macOS keychain (what `gh as-bot setup` writes for you)
 export GH_AS_BOT_PRIVATE_KEY="$(security find-generic-password -s gh-as-bot -w)"
 
 # 1Password CLI
 export GH_AS_BOT_PRIVATE_KEY="$(op read 'op://Private/gh-as-bot/private-key')"
 ```
 
-A shell function makes invocation seamless:
+## GitHub App reference
 
-```bash
-gh-bot() {
-  GH_AS_BOT_APP_ID=123456 \
-  GH_AS_BOT_INSTALLATION_ID=789012 \
-  GH_AS_BOT_PRIVATE_KEY="$(op read 'op://Private/gh-as-bot/private-key')" \
-  gh as-bot "$@"
-}
-```
+`gh as-bot setup` covers this interactively. For reference, the App needs:
 
-## GitHub App setup
-
-This extension authenticates as a GitHub App installation, so you need a GitHub App first.
-
-1. **Create the App** — Org settings → Developer settings → GitHub Apps → New GitHub App.
-2. **Permissions** (Repository):
-   - `Pull requests: Read & write` — leave reviews and review comments
-   - `Contents: Read` — needed by `gh` for most read paths
-   - `Issues: Read & write` — comment on issues / PR conversation
-3. **Webhook**: not needed for this use case — uncheck "Active" on the webhook section.
-4. **Generate a private key** — App settings → "Private keys" → "Generate a private key". Download the `.pem` file. You won't be able to download it again.
-5. **Install the App** on your org or specific repos. After installing, the URL will look like `.../installations/123456/...` — that's your installation ID.
-6. **Find the App ID** in the App settings header.
+- **Repository permissions**:
+  - `Pull requests: Read & write` — post reviews and review comments
+  - `Contents: Read` — `gh` needs this for most read paths
+  - `Issues: Read & write` — post issue / PR conversation comments
+- **Webhook**: not used — uncheck "Active".
+- **Private key**: generate from App settings → "Private keys". The `.pem` is shown once; setup helps you stash it.
+- **Install** the App on the repos that should accept bot reviews.
 
 The bot identity that posts reviews will be `<app-slug>[bot]` (e.g. `negsoft-claude[bot]`).
 
