@@ -38,12 +38,12 @@ Example:
 // tests drive the binary without forking, and matches gh-attach's layout.
 func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
-		fmt.Fprint(stderr, usage)
+		_, _ = fmt.Fprint(stderr, usage)
 		return 2
 	}
 	switch args[0] {
 	case "help", "-h", "--help":
-		fmt.Fprint(stdout, usage)
+		_, _ = fmt.Fprint(stdout, usage)
 		return 0
 	case "setup":
 		return runSetup(stdin, stdout, stderr)
@@ -76,20 +76,20 @@ func mintToken() (string, error) {
 func runToken(stdout, stderr io.Writer) int {
 	tok, err := mintToken()
 	if err != nil {
-		fmt.Fprintln(stderr, "gh-as-bot:", err)
+		_, _ = fmt.Fprintln(stderr, "gh-as-bot:", err)
 		return 1
 	}
-	fmt.Fprintln(stdout, tok)
+	_, _ = fmt.Fprintln(stdout, tok)
 	return 0
 }
 
 func runDoctor(stdout, stderr io.Writer) int {
 	tok, err := mintToken()
 	if err != nil {
-		fmt.Fprintln(stderr, "gh-as-bot: config check failed:", err)
+		_, _ = fmt.Fprintln(stderr, "gh-as-bot: config check failed:", err)
 		return 1
 	}
-	fmt.Fprintf(stdout, "ok: minted installation token (length=%d)\n", len(tok))
+	_, _ = fmt.Fprintf(stdout, "ok: minted installation token (length=%d)\n", len(tok))
 	return 0
 }
 
@@ -103,12 +103,12 @@ func runDoctor(stdout, stderr io.Writer) int {
 func runExec(args []string, stderr io.Writer) int {
 	tok, err := mintToken()
 	if err != nil {
-		fmt.Fprintln(stderr, "gh-as-bot:", err)
+		_, _ = fmt.Fprintln(stderr, "gh-as-bot:", err)
 		return 1
 	}
 	bin, err := exec.LookPath("gh")
 	if err != nil {
-		fmt.Fprintln(stderr, "gh-as-bot: gh not found in PATH")
+		_, _ = fmt.Fprintln(stderr, "gh-as-bot: gh not found in PATH")
 		return 1
 	}
 
@@ -122,7 +122,7 @@ func runExec(args []string, stderr io.Writer) int {
 	env = append(env, "GH_TOKEN="+tok)
 
 	if err := syscall.Exec(bin, append([]string{"gh"}, args...), env); err != nil {
-		fmt.Fprintln(stderr, "gh-as-bot: exec failed:", err)
+		_, _ = fmt.Fprintln(stderr, "gh-as-bot: exec failed:", err)
 		return 1
 	}
 	return 0

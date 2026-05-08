@@ -43,7 +43,7 @@ func MintInstallationToken(ctx context.Context, client *http.Client, apiURL, jwt
 	if err != nil {
 		return nil, fmt.Errorf("request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	body, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode != http.StatusCreated {
