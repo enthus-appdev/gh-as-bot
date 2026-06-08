@@ -57,11 +57,16 @@ Recommended sourcing patterns for the private key (don't keep `.pem` on disk in 
 
 ```bash
 # macOS keychain (what `gh as-bot setup` writes for you)
-export GH_AS_BOT_PRIVATE_KEY="$(security find-generic-password -s gh-as-bot -w)"
+# The key is stored base64-encoded, so decode it on read — macOS
+# `security -w` hex-mangles any value containing newlines (a raw PEM has
+# many), which would otherwise round-trip to garbage.
+export GH_AS_BOT_PRIVATE_KEY="$(security find-generic-password -s gh-as-bot -w | base64 -D)"
 
 # 1Password CLI
 export GH_AS_BOT_PRIVATE_KEY="$(op read 'op://Private/gh-as-bot/private-key')"
 ```
+
+If you stashed the key into the keychain yourself (rather than via `gh as-bot setup`), store it base64-encoded so the read above works: `base64 < your-app.pem | security add-generic-password -s gh-as-bot -a default -U -w "$(cat -)"`.
 
 ## One App per person (recommended)
 

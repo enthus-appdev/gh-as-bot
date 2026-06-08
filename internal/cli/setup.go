@@ -3,6 +3,7 @@ package cli
 import (
 	"bufio"
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"io"
@@ -144,7 +145,7 @@ func (s *setup) run() int {
 			} else {
 				_, _ = fmt.Fprintln(s.out, "  ✓ saved to keychain (service=gh-as-bot, account=default)")
 				_, _ = fmt.Fprintln(s.out, "  You can now safely delete the .pem file from disk.")
-				keyRef = `$(security find-generic-password -s gh-as-bot -w)`
+				keyRef = keychainKeyRef
 			}
 		} else {
 			_, _ = fmt.Fprintln(s.out, "  Skipped — env will reference the .pem path directly.")
@@ -189,14 +190,29 @@ func (s *setup) requirePrompt(label string) (string, error) {
 	return v, nil
 }
 
+// keychainKeyRef is the shell snippet that reads the stored key back into
+// GH_AS_BOT_PRIVATE_KEY. The key is stored base64-encoded (see
+// saveToKeychain), so it must be decoded on read. Apple's `base64 -D`
+// (capital, decode) is used because it's present on every macOS version,
+// unlike the GNU-style `-d`/`--decode`. This snippet is only ever emitted
+// on darwin.
+const keychainKeyRef = `$(security find-generic-password -s gh-as-bot -w | base64 -D)`
+
 // saveToKeychain stores the PEM under service=gh-as-bot account=default.
 // `-U` upserts, so re-running setup overwrites stale keys cleanly.
+//
+// The PEM is base64-encoded before storage. A raw multi-line PEM is a
+// trap: macOS `security ... -w` hex-encodes any value containing a
+// newline on read, so a raw PEM round-trips to a hex blob that LoadConfig
+// then mistakes for a file path. base64 collapses the key to a single
+// newline-free line, which `-w` returns verbatim. keychainKeyRef decodes it.
 func saveToKeychain(pem []byte) error {
+	encoded := base64.StdEncoding.EncodeToString(pem)
 	cmd := exec.Command("security", "add-generic-password",
 		"-s", "gh-as-bot",
 		"-a", "default",
 		"-U",
-		"-w", string(pem),
+		"-w", encoded,
 	)
 	out, err := cmd.CombinedOutput()
 	if err != nil {

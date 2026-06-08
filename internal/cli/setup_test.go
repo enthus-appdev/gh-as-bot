@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"encoding/base64"
 	"strings"
 	"testing"
 )
@@ -40,6 +41,35 @@ func TestSetup_ReadsKeyPathBeforeVerifying(t *testing.T) {
 	}
 	if !strings.Contains(stderr.String(), "couldn't read key file") {
 		t.Errorf("expected key-read error; got stderr: %q", stderr.String())
+	}
+}
+
+// TestKeychainRoundTrip guards the macOS keychain bug: a raw multi-line
+// PEM stored under `security ... -w` is hex-mangled on read because the
+// value contains newlines. saveToKeychain base64-encodes to dodge this,
+// and keychainKeyRef must decode on read. We verify the encoding is
+// newline-free (the actual fix) and round-trips, and that the read-back
+// snippet decodes it.
+func TestKeychainRoundTrip(t *testing.T) {
+	pem := []byte("-----BEGIN RSA PRIVATE KEY-----\nMIIabc\nDEFghi\n-----END RSA PRIVATE KEY-----\n")
+
+	encoded := base64.StdEncoding.EncodeToString(pem)
+	if strings.ContainsAny(encoded, "\n\r") {
+		t.Fatalf("encoded key contains a newline — security -w would hex-mangle it: %q", encoded)
+	}
+	decoded, err := base64.StdEncoding.DecodeString(encoded)
+	if err != nil {
+		t.Fatalf("decode failed: %v", err)
+	}
+	if string(decoded) != string(pem) {
+		t.Errorf("round-trip mismatch:\n got %q\nwant %q", decoded, pem)
+	}
+
+	if !strings.Contains(keychainKeyRef, "base64 -D") {
+		t.Errorf("keychainKeyRef must decode the stored key; got %q", keychainKeyRef)
+	}
+	if !strings.Contains(keychainKeyRef, "-s gh-as-bot ") {
+		t.Errorf("keychainKeyRef must read the gh-as-bot service; got %q", keychainKeyRef)
 	}
 }
 
