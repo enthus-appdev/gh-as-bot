@@ -190,26 +190,57 @@ func (s *setup) run() int {
 	_, _ = fmt.Fprintln(s.out, "")
 	_, _ = fmt.Fprintln(s.out, "Step 4/4 — Shell configuration")
 	shell := detectShell()
-	_, _ = fmt.Fprintf(s.out, "  Add this to your shell profile (%s):\n", shell.rcDescription)
-	_, _ = fmt.Fprintln(s.out, "")
+
+	// Lines to add to the rc, and the block id that keys the managed block
+	// (so several contexts can coexist without clobbering each other).
+	var rcLines []string
+	blockID := "default"
+	verify := "gh as-bot doctor"
 	if ctxName != "" {
-		// Per-context: only the key lives in env; app/installation ids are
-		// in the config file. Selection stays explicit per shell.
-		_, _ = fmt.Fprintf(s.out, "    export %s=%q\n", app.KeyEnvVar(ctxName), keyRef)
-		_, _ = fmt.Fprintf(s.out, "    # select this identity (or pass --context %s per call):\n", ctxName)
-		_, _ = fmt.Fprintf(s.out, "    export GH_AS_BOT_CONTEXT=%q\n", ctxName)
+		// Per-context: only the key lives in env (app/installation ids are in
+		// the config file). We deliberately do NOT export GH_AS_BOT_CONTEXT —
+		// selection is per call via --context, and the team's guard hook
+		// ignores an ambient default anyway.
+		blockID = ctxName
+		rcLines = []string{
+			fmt.Sprintf("# gh-as-bot context %q — pass --context %s per call", ctxName, ctxName),
+			shell.keyExportLine(app.KeyEnvVar(ctxName), keyRef),
+		}
+		verify = "gh as-bot --context " + ctxName + " doctor"
 	} else {
-		for _, line := range shell.exportLines(appID, instID, keyRef) {
+		rcLines = shell.exportLines(appID, instID, keyRef)
+	}
+
+	// Offer to write the block directly so devs don't copy-paste. $SHELL can
+	// lie, so confirm the path (Enter accepts, a path overrides, n skips).
+	rcPath := shell.rcPath
+	promptLabel := fmt.Sprintf("Append to %s? [Y/n] (Enter=yes, or type a path)", shell.rcDescription)
+	if rcPath == "" {
+		promptLabel = "Path to your shell profile to update (blank to skip)"
+	}
+	// resolveRcTarget maps y/yes/Enter → detected path, n/no → skip, else a
+	// path override. (Plain "y" used to fall through and write a file named "y".)
+	rcPath = resolveRcTarget(s.prompt(promptLabel), rcPath)
+
+	if rcPath != "" {
+		if err := writeManagedRcBlock(rcPath, blockID, rcLines); err != nil {
+			_, _ = fmt.Fprintln(s.err, "  ✗ couldn't update "+rcPath+":", err)
+			_, _ = fmt.Fprintln(s.out, "  Add these lines manually:")
+			for _, line := range rcLines {
+				_, _ = fmt.Fprintf(s.out, "    %s\n", line)
+			}
+		} else {
+			_, _ = fmt.Fprintf(s.out, "  ✓ wrote gh-as-bot block to %s\n", rcPath)
+		}
+	} else {
+		_, _ = fmt.Fprintf(s.out, "  Add these to your shell profile (%s):\n\n", shell.rcDescription)
+		for _, line := range rcLines {
 			_, _ = fmt.Fprintf(s.out, "    %s\n", line)
 		}
 	}
+
 	_, _ = fmt.Fprintln(s.out, "")
-	_, _ = fmt.Fprintln(s.out, "  Open a fresh shell (or `source` your profile), then verify:")
-	if ctxName != "" {
-		_, _ = fmt.Fprintf(s.out, "    gh as-bot --context %s doctor\n", ctxName)
-	} else {
-		_, _ = fmt.Fprintln(s.out, "    gh as-bot doctor")
-	}
+	_, _ = fmt.Fprintf(s.out, "  Open a fresh shell (or `source` your profile), then verify:\n    %s\n", verify)
 	_, _ = fmt.Fprintln(s.out, "")
 	_, _ = fmt.Fprintln(s.out, "Setup complete. ✨")
 	return 0
