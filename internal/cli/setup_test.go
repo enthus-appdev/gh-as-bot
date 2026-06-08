@@ -21,7 +21,7 @@ func TestSetup_HeaderAndStepsPrinted(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	_ = runSetup(strings.NewReader("\n"), &stdout, &stderr)
 	out := stdout.String()
-	for _, want := range []string{"gh-as-bot setup", "Step 1/4", "Pull requests", "App ID"} {
+	for _, want := range []string{"gh-as-bot setup", "Step 1/4", "Pull requests", "App ID", "Homepage URL", "OAuth"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("setup output missing %q\nfull output:\n%s", want, out)
 		}

@@ -81,6 +81,9 @@ Trade-off: N Apps to manage instead of one shared bot. For a small team this is 
 `gh as-bot setup` covers this interactively. For reference, the App needs:
 
 - **Owner**: your personal account (per-person) or your org (shared bot).
+- **Name**: must be globally unique across GitHub (e.g. `<your-username>-claude`).
+- **Homepage URL**: required — any valid URL incl. scheme (e.g. `https://example.com`). Cosmetic for our use; it just has to parse.
+- **"Request user authorization (OAuth) during installation"**: uncheck it. Leaving it on forces a Callback URL we don't use — gh-as-bot authenticates as an App installation, not via the OAuth user flow.
 - **"Where can this GitHub App be installed?"**: Any account — so personal Apps can still install on org repos.
 - **Repository permissions**:
   - `Pull requests: Read & write` — post reviews and review comments
