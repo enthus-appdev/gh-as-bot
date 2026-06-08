@@ -202,10 +202,9 @@ func (s *setup) run() int {
 		// selection is per call via --context, and the team's guard hook
 		// ignores an ambient default anyway.
 		blockID = ctxName
-		keyIsSub := strings.HasPrefix(keyRef, "$(")
 		rcLines = []string{
 			fmt.Sprintf("# gh-as-bot context %q — pass --context %s per call", ctxName, ctxName),
-			shell.render(app.KeyEnvVar(ctxName), keyRef, keyIsSub),
+			shell.keyExportLine(app.KeyEnvVar(ctxName), keyRef),
 		}
 		verify = "gh as-bot --context " + ctxName + " doctor"
 	} else {
@@ -219,14 +218,9 @@ func (s *setup) run() int {
 	if rcPath == "" {
 		promptLabel = "Path to your shell profile to update (blank to skip)"
 	}
-	switch ans := s.prompt(promptLabel); {
-	case strings.EqualFold(ans, "n") || strings.EqualFold(ans, "no"):
-		rcPath = ""
-	case ans == "":
-		// keep detected rcPath (may be "" for unknown shell → skip)
-	default:
-		rcPath = expandTilde(ans)
-	}
+	// resolveRcTarget maps y/yes/Enter → detected path, n/no → skip, else a
+	// path override. (Plain "y" used to fall through and write a file named "y".)
+	rcPath = resolveRcTarget(s.prompt(promptLabel), rcPath)
 
 	if rcPath != "" {
 		if err := writeManagedRcBlock(rcPath, blockID, rcLines); err != nil {
