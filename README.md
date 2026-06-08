@@ -27,6 +27,12 @@ gh as-bot pr review 123 -c -b "Bot review here."
 gh as-bot pr comment 123 -b "Heads up: this needs a migration."
 gh as-bot api repos/{owner}/{repo}/pulls/123/reviews -f event=COMMENT ...
 
+# Run under a specific identity (see Contexts below)
+gh as-bot --context org pr review 123 -c -b "Bot review here."
+
+# Manage named identities
+gh as-bot context list
+
 # Print just the installation token (useful for piping)
 gh as-bot --token
 
@@ -48,9 +54,12 @@ gh as-bot help
 
 | Variable | Description |
 |----------|-------------|
-| `GH_AS_BOT_APP_ID` | Numeric App ID from the GitHub App settings page |
-| `GH_AS_BOT_INSTALLATION_ID` | Numeric installation ID for the org/account where the App is installed |
-| `GH_AS_BOT_PRIVATE_KEY` | Either inline PEM contents (starting with `-----BEGIN`) or a path to a `.pem` file |
+| `GH_AS_BOT_APP_ID` | Numeric App ID from the GitHub App settings page (legacy single-App mode) |
+| `GH_AS_BOT_INSTALLATION_ID` | Numeric installation ID for the org/account where the App is installed (legacy single-App mode) |
+| `GH_AS_BOT_PRIVATE_KEY` | Either inline PEM contents (starting with `-----BEGIN`) or a path to a `.pem` file (legacy single-App mode) |
+| `GH_AS_BOT_CONTEXT` | Active context name when `--context` is not passed (see [Contexts](#contexts-multiple-identities)) |
+| `GH_AS_BOT_PRIVATE_KEY_<NAME>` | Per-context private key (PEM or path), where `<NAME>` is the upper-cased context name |
+| `GH_AS_BOT_CONFIG` | Optional; config file path (default `~/.config/gh-as-bot/config.json`) |
 | `GITHUB_API_URL` | Optional; override API base for GHES |
 
 Recommended sourcing patterns for the private key (don't keep `.pem` on disk in plaintext):
@@ -73,6 +82,53 @@ If you stashed the key into the keychain yourself (rather than via `gh as-bot se
 ```bash
 security add-generic-password -s gh-as-bot -a default -U -w "$(base64 < your-app.pem | tr -d '\n')"
 ```
+
+## Contexts (multiple identities)
+
+If you need more than one bot identity — e.g. an org-owned App for org repos and a personal-owned App for personal repos — use **contexts**. Each context is a named credential set; you pick one explicitly per shell or per call.
+
+GitHub's install model nudges you toward two **private** Apps rather than one public one: a private App installs only on its owner account, so org + personal means an org-owned App and a personal-owned App, each with its own key and installation. Neither needs to be made public.
+
+### Why selection is always explicit
+
+There is **no persisted "current context"**. `gh as-bot` exists precisely to avoid the global, cross-shell state of `gh auth switch` (see [below](#why-not-just-gh-auth-switch)). A mutable default in a shared config file would reintroduce exactly that: switching in one terminal would silently change the identity in every other concurrent session. So with contexts defined, you must select one via `--context <name>` (per call) or `GH_AS_BOT_CONTEXT` (per shell) — gh-as-bot never guesses an identity. With no contexts defined, it falls back to the legacy single-App env vars.
+
+### Setup
+
+Run `gh as-bot setup` once per App and give each a context name (e.g. `org`, `personal`). Setup writes the non-secret `app_id` + `installation_id` to `~/.config/gh-as-bot/config.json`, stashes that App's key in the keychain under service `gh-as-bot-<name>` (base64), and prints the rc lines to source.
+
+You can also define a context non-interactively:
+
+```bash
+gh as-bot context add org --app-id 3995028 --installation-id 138796188
+# stash that App's key under its own keychain service:
+security add-generic-password -s gh-as-bot-org -a default -U -w "$(base64 < org-app.pem | tr -d '\n')"
+# print the rc lines (key env var + selector) to add to your profile:
+gh as-bot context export org
+```
+
+`gh as-bot context export <name>` emits:
+
+```bash
+export GH_AS_BOT_PRIVATE_KEY_ORG="$(security find-generic-password -s 'gh-as-bot-org' -w | base64 -D)"
+export GH_AS_BOT_CONTEXT="org"
+```
+
+Only the **key** lives in env (resolved from the keychain by your shell); `app_id` and `installation_id` live in the non-secret config file. **Never put a private key (PEM) in `config.json`** — it holds App/installation IDs only; keys belong in the keychain or your secrets manager.
+
+### Using contexts
+
+```bash
+gh as-bot context list                     # show defined contexts
+gh as-bot context current                  # show the active context
+gh as-bot --context org pr review 5 -c -b "Bot review"   # one-off override
+GH_AS_BOT_CONTEXT=personal gh as-bot pr comment 1 -b "…" # per shell
+gh as-bot context remove old-ctx
+```
+
+For concurrent sessions, set `GH_AS_BOT_CONTEXT` per shell (or pass `--context`); each window keeps its own identity with no cross-talk.
+
+> A companion Claude Code guard hook (shipped separately, like the sqlcmd context guard) can block `gh as-bot` calls that don't carry an explicit context, so an accidental wrong-identity post is caught before it runs. It's a cooperative nudge, not a security boundary.
 
 ## One App per person (recommended)
 

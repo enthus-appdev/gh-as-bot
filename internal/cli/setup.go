@@ -94,6 +94,16 @@ func (s *setup) run() int {
 	_, _ = fmt.Fprintln(s.out, "   you lose per-person attribution and share one private key.)")
 	_, _ = fmt.Fprintln(s.out, "")
 
+	// A named context lets you keep more than one identity (e.g. org vs
+	// personal). Blank keeps the legacy single-App env behavior.
+	ctxName := s.prompt("Context name (blank for legacy single-App mode)")
+	if ctxName != "" {
+		if err := app.ValidateContextName(ctxName); err != nil {
+			_, _ = fmt.Fprintln(s.err, "  ✗", err)
+			return 1
+		}
+	}
+
 	appID, err := s.requirePrompt("App ID (numeric)")
 	if err != nil {
 		return 1
@@ -112,6 +122,26 @@ func (s *setup) run() int {
 	if err != nil {
 		_, _ = fmt.Fprintln(s.err, "  ✗ couldn't read key file:", err)
 		return 1
+	}
+
+	// Persist the context definition (non-secret) before the network
+	// verify, so a re-run after a transient verify failure keeps the entry.
+	if ctxName != "" {
+		cf, err := app.LoadContextFile()
+		if err != nil {
+			_, _ = fmt.Fprintln(s.err, "  ✗ load config:", err)
+			return 1
+		}
+		if other := cf.CollidingContext(ctxName); other != "" {
+			_, _ = fmt.Fprintf(s.err, "  ✗ context %q collides with existing %q (both map to %s); pick a name differing by more than case or -/_\n", ctxName, other, app.KeyEnvVar(ctxName))
+			return 1
+		}
+		cf.Contexts[ctxName] = app.ContextEntry{AppID: appID, InstallationID: instID}
+		if err := app.SaveContextFile(cf); err != nil {
+			_, _ = fmt.Fprintln(s.err, "  ✗ save config:", err)
+			return 1
+		}
+		_, _ = fmt.Fprintf(s.out, "  ✓ wrote context %q to %s\n", ctxName, app.ConfigPath())
 	}
 
 	// Step 2
@@ -134,18 +164,19 @@ func (s *setup) run() int {
 	// Step 3
 	_, _ = fmt.Fprintln(s.out, "")
 	_, _ = fmt.Fprintln(s.out, "Step 3/4 — Store the private key")
+	service := keychainService(ctxName)
 	keyRef := keyPath
 	if runtime.GOOS == "darwin" {
 		_, _ = fmt.Fprintln(s.out, "  Keychain storage avoids leaving the .pem on disk in plaintext.")
 		choice := s.prompt("Save key to macOS keychain? [Y/n]")
 		if choice == "" || strings.EqualFold(choice, "y") || strings.EqualFold(choice, "yes") {
-			if err := saveToKeychain(keyData); err != nil {
+			if err := saveToKeychain(service, keyData); err != nil {
 				_, _ = fmt.Fprintln(s.err, "  ✗ keychain save failed:", err)
 				_, _ = fmt.Fprintln(s.out, "  Falling back to file path:", keyPath)
 			} else {
-				_, _ = fmt.Fprintln(s.out, "  ✓ saved to keychain (service=gh-as-bot, account=default)")
+				_, _ = fmt.Fprintf(s.out, "  ✓ saved to keychain (service=%s, account=default)\n", service)
 				_, _ = fmt.Fprintln(s.out, "  You can now safely delete the .pem file from disk.")
-				keyRef = keychainKeyRef
+				keyRef = keychainServiceRef(service)
 			}
 		} else {
 			_, _ = fmt.Fprintln(s.out, "  Skipped — env will reference the .pem path directly.")
@@ -161,12 +192,24 @@ func (s *setup) run() int {
 	shell := detectShell()
 	_, _ = fmt.Fprintf(s.out, "  Add this to your shell profile (%s):\n", shell.rcDescription)
 	_, _ = fmt.Fprintln(s.out, "")
-	for _, line := range shell.exportLines(appID, instID, keyRef) {
-		_, _ = fmt.Fprintf(s.out, "    %s\n", line)
+	if ctxName != "" {
+		// Per-context: only the key lives in env; app/installation ids are
+		// in the config file. Selection stays explicit per shell.
+		_, _ = fmt.Fprintf(s.out, "    export %s=%q\n", app.KeyEnvVar(ctxName), keyRef)
+		_, _ = fmt.Fprintf(s.out, "    # select this identity (or pass --context %s per call):\n", ctxName)
+		_, _ = fmt.Fprintf(s.out, "    export GH_AS_BOT_CONTEXT=%q\n", ctxName)
+	} else {
+		for _, line := range shell.exportLines(appID, instID, keyRef) {
+			_, _ = fmt.Fprintf(s.out, "    %s\n", line)
+		}
 	}
 	_, _ = fmt.Fprintln(s.out, "")
 	_, _ = fmt.Fprintln(s.out, "  Open a fresh shell (or `source` your profile), then verify:")
-	_, _ = fmt.Fprintln(s.out, "    gh as-bot doctor")
+	if ctxName != "" {
+		_, _ = fmt.Fprintf(s.out, "    gh as-bot --context %s doctor\n", ctxName)
+	} else {
+		_, _ = fmt.Fprintln(s.out, "    gh as-bot doctor")
+	}
 	_, _ = fmt.Fprintln(s.out, "")
 	_, _ = fmt.Fprintln(s.out, "Setup complete. ✨")
 	return 0
@@ -190,15 +233,6 @@ func (s *setup) requirePrompt(label string) (string, error) {
 	return v, nil
 }
 
-// keychainKeyRef is the shell snippet that reads the stored key back into
-// GH_AS_BOT_PRIVATE_KEY. The key is stored base64-encoded (see
-// saveToKeychain), so it must be decoded on read. The absolute BSD path
-// `/usr/bin/base64 -D` is pinned deliberately: the `-D` (capital, decode)
-// flag is BSD/macOS-specific, and a Homebrew GNU coreutils `base64` earlier
-// in PATH would reject it (GNU uses `-d`) and silently yield an empty key.
-// This snippet is only ever emitted on darwin.
-const keychainKeyRef = `$(security find-generic-password -s gh-as-bot -w | /usr/bin/base64 -D)`
-
 // encodeKeyForKeychain is the single encoder for the keychain write path —
 // the production code and its test both go through this, so the test can't
 // pass while the real path regresses. base64 collapses a multi-line PEM to
@@ -208,24 +242,26 @@ func encodeKeyForKeychain(pem []byte) string {
 	return base64.StdEncoding.EncodeToString(pem)
 }
 
-// saveToKeychain stores the PEM under service=gh-as-bot account=default.
-// `-U` upserts, so re-running setup overwrites stale keys cleanly.
+// saveToKeychain stores the PEM under the given keychain service,
+// account=default. `-U` upserts, so re-running setup overwrites stale keys
+// cleanly. (keychainService / keychainServiceRef live in context.go.)
 //
 // The PEM is base64-encoded before storage. A raw multi-line PEM is a
 // trap: macOS `security ... -w` hex-encodes any value containing a
 // newline on read, so a raw PEM round-trips to a hex blob that LoadConfig
 // then mistakes for a file path. base64 collapses the key to a single
-// newline-free line, which `-w` returns verbatim. keychainKeyRef decodes it.
+// newline-free line, which `-w` returns verbatim; keychainServiceRef
+// decodes it with the pinned `/usr/bin/base64 -D`.
 //
 // The encoded key is passed as an argv element to `security`. That is
 // briefly visible via `ps` to other local users (CWE-214); we accept it:
 // this is a single-user dev tool, `security` has no scriptable stdin-password
 // mode, and the alternative (a Cgo keychain library) would break the
 // project's zero-dependency guarantee.
-func saveToKeychain(pem []byte) error {
+func saveToKeychain(service string, pem []byte) error {
 	encoded := encodeKeyForKeychain(pem)
 	cmd := exec.Command("security", "add-generic-password",
-		"-s", "gh-as-bot",
+		"-s", service,
 		"-a", "default",
 		"-U",
 		"-w", encoded,
