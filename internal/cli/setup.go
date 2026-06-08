@@ -192,11 +192,21 @@ func (s *setup) requirePrompt(label string) (string, error) {
 
 // keychainKeyRef is the shell snippet that reads the stored key back into
 // GH_AS_BOT_PRIVATE_KEY. The key is stored base64-encoded (see
-// saveToKeychain), so it must be decoded on read. Apple's `base64 -D`
-// (capital, decode) is used because it's present on every macOS version,
-// unlike the GNU-style `-d`/`--decode`. This snippet is only ever emitted
-// on darwin.
-const keychainKeyRef = `$(security find-generic-password -s gh-as-bot -w | base64 -D)`
+// saveToKeychain), so it must be decoded on read. The absolute BSD path
+// `/usr/bin/base64 -D` is pinned deliberately: the `-D` (capital, decode)
+// flag is BSD/macOS-specific, and a Homebrew GNU coreutils `base64` earlier
+// in PATH would reject it (GNU uses `-d`) and silently yield an empty key.
+// This snippet is only ever emitted on darwin.
+const keychainKeyRef = `$(security find-generic-password -s gh-as-bot -w | /usr/bin/base64 -D)`
+
+// encodeKeyForKeychain is the single encoder for the keychain write path —
+// the production code and its test both go through this, so the test can't
+// pass while the real path regresses. base64 collapses a multi-line PEM to
+// one newline-free line (Go's StdEncoding never wraps), which is what makes
+// the round-trip work; see saveToKeychain.
+func encodeKeyForKeychain(pem []byte) string {
+	return base64.StdEncoding.EncodeToString(pem)
+}
 
 // saveToKeychain stores the PEM under service=gh-as-bot account=default.
 // `-U` upserts, so re-running setup overwrites stale keys cleanly.
@@ -206,8 +216,14 @@ const keychainKeyRef = `$(security find-generic-password -s gh-as-bot -w | base6
 // newline on read, so a raw PEM round-trips to a hex blob that LoadConfig
 // then mistakes for a file path. base64 collapses the key to a single
 // newline-free line, which `-w` returns verbatim. keychainKeyRef decodes it.
+//
+// The encoded key is passed as an argv element to `security`. That is
+// briefly visible via `ps` to other local users (CWE-214); we accept it:
+// this is a single-user dev tool, `security` has no scriptable stdin-password
+// mode, and the alternative (a Cgo keychain library) would break the
+// project's zero-dependency guarantee.
 func saveToKeychain(pem []byte) error {
-	encoded := base64.StdEncoding.EncodeToString(pem)
+	encoded := encodeKeyForKeychain(pem)
 	cmd := exec.Command("security", "add-generic-password",
 		"-s", "gh-as-bot",
 		"-a", "default",

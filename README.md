@@ -59,8 +59,10 @@ Recommended sourcing patterns for the private key (don't keep `.pem` on disk in 
 # macOS keychain (what `gh as-bot setup` writes for you)
 # The key is stored base64-encoded, so decode it on read — macOS
 # `security -w` hex-mangles any value containing newlines (a raw PEM has
-# many), which would otherwise round-trip to garbage.
-export GH_AS_BOT_PRIVATE_KEY="$(security find-generic-password -s gh-as-bot -w | base64 -D)"
+# many), which would otherwise round-trip to garbage. `/usr/bin/base64` is
+# pinned because the BSD `-D` decode flag differs from GNU coreutils' `-d`;
+# a Homebrew GNU base64 ahead in PATH would otherwise silently yield an empty key.
+export GH_AS_BOT_PRIVATE_KEY="$(security find-generic-password -s gh-as-bot -w | /usr/bin/base64 -D)"
 
 # 1Password CLI
 export GH_AS_BOT_PRIVATE_KEY="$(op read 'op://Private/gh-as-bot/private-key')"

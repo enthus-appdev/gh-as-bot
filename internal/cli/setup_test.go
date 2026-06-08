@@ -51,22 +51,34 @@ func TestSetup_ReadsKeyPathBeforeVerifying(t *testing.T) {
 // newline-free (the actual fix) and round-trips, and that the read-back
 // snippet decodes it.
 func TestKeychainRoundTrip(t *testing.T) {
-	pem := []byte("-----BEGIN RSA PRIVATE KEY-----\nMIIabc\nDEFghi\n-----END RSA PRIVATE KEY-----\n")
+	// Build a realistic multi-line PEM far larger than any base64 line-wrap
+	// threshold (a real GitHub App key is ~1.7KB). This proves the encoder
+	// emits a single newline-free line even at full key size — the property
+	// security -w depends on.
+	var b strings.Builder
+	b.WriteString("-----BEGIN RSA PRIVATE KEY-----\n")
+	for i := 0; i < 40; i++ {
+		b.WriteString("MIIEpAIBAAKCAQEAytkEkF9UnK/X2mL7+8ou4F+WM+D+1c5ixPUW725irT+Uild\n")
+	}
+	b.WriteString("-----END RSA PRIVATE KEY-----\n")
+	pem := []byte(b.String())
 
-	encoded := base64.StdEncoding.EncodeToString(pem)
+	// Exercise the PRODUCTION encoder, not a re-implementation — so this test
+	// fails if saveToKeychain ever stops base64-encoding.
+	encoded := encodeKeyForKeychain(pem)
 	if strings.ContainsAny(encoded, "\n\r") {
-		t.Fatalf("encoded key contains a newline — security -w would hex-mangle it: %q", encoded)
+		t.Fatalf("encoded key (%d bytes -> %d chars) contains a newline — security -w would hex-mangle it", len(pem), len(encoded))
 	}
 	decoded, err := base64.StdEncoding.DecodeString(encoded)
 	if err != nil {
 		t.Fatalf("decode failed: %v", err)
 	}
 	if string(decoded) != string(pem) {
-		t.Errorf("round-trip mismatch:\n got %q\nwant %q", decoded, pem)
+		t.Errorf("round-trip mismatch through encodeKeyForKeychain")
 	}
 
-	if !strings.Contains(keychainKeyRef, "base64 -D") {
-		t.Errorf("keychainKeyRef must decode the stored key; got %q", keychainKeyRef)
+	if !strings.Contains(keychainKeyRef, "/usr/bin/base64 -D") {
+		t.Errorf("keychainKeyRef must decode with the pinned BSD base64; got %q", keychainKeyRef)
 	}
 	if !strings.Contains(keychainKeyRef, "-s gh-as-bot ") {
 		t.Errorf("keychainKeyRef must read the gh-as-bot service; got %q", keychainKeyRef)
