@@ -16,6 +16,13 @@ type shellProfile struct {
 	// (e.g. "~/.bashrc"). For unknown shells we widen this to a list.
 	rcDescription string
 
+	// rcPath is the concrete file setup offers to write to (tilde-expanded).
+	// Empty for an unrecognized shell — setup then asks for a path rather
+	// than guessing. NOTE: $SHELL can lie (a login-shell zsh while the dev
+	// works in bash), which is why setup confirms the path before writing
+	// instead of trusting detection.
+	rcPath string
+
 	// quotedAssign is the function that renders `KEY=value` (or its
 	// equivalent) for this shell, given a value that may contain a
 	// command substitution.
@@ -38,14 +45,70 @@ func (p shellProfile) exportLines(appID, instID, keyRef string) []string {
 func detectShell() shellProfile {
 	switch shellBasename() {
 	case "zsh":
-		return shellProfile{rcDescription: "~/.zshrc", render: bashStyleExport}
+		return shellProfile{rcDescription: "~/.zshrc", rcPath: expandTilde("~/.zshrc"), render: bashStyleExport}
 	case "bash":
-		return shellProfile{rcDescription: "~/.bashrc", render: bashStyleExport}
+		return shellProfile{rcDescription: "~/.bashrc", rcPath: expandTilde("~/.bashrc"), render: bashStyleExport}
 	case "fish":
-		return shellProfile{rcDescription: "~/.config/fish/config.fish", render: fishStyleExport}
+		return shellProfile{rcDescription: "~/.config/fish/config.fish", rcPath: expandTilde("~/.config/fish/config.fish"), render: fishStyleExport}
 	default:
-		return shellProfile{rcDescription: "~/.zshrc, ~/.bashrc, or equivalent", render: bashStyleExport}
+		return shellProfile{rcDescription: "~/.zshrc, ~/.bashrc, or equivalent", rcPath: "", render: bashStyleExport}
 	}
+}
+
+// rcBlockMarkers returns the begin/end marker lines for a managed gh-as-bot
+// block, keyed by id (the context name, or "default" for legacy mode). Keying
+// by id lets several contexts coexist in one rc — each setup run rewrites only
+// its own block, never clobbering another context's key line.
+func rcBlockMarkers(id string) (begin, end string) {
+	return "# >>> gh-as-bot:" + id + " >>>", "# <<< gh-as-bot:" + id + " <<<"
+}
+
+// writeManagedRcBlock idempotently writes a marked block of lines into rcPath.
+// An existing block with the same id is replaced in place; otherwise the block
+// is appended. The rest of the file is left untouched. The file (and parent
+// dir) are created if absent.
+func writeManagedRcBlock(rcPath, id string, lines []string) error {
+	begin, end := rcBlockMarkers(id)
+	block := begin + "\n" + strings.Join(lines, "\n") + "\n" + end
+
+	existing := ""
+	if b, err := os.ReadFile(rcPath); err == nil {
+		existing = string(b)
+	} else if !os.IsNotExist(err) {
+		return err
+	}
+
+	var out string
+	if bi := strings.Index(existing, begin); bi != -1 {
+		ei := strings.Index(existing[bi:], end)
+		if ei == -1 {
+			return fmt.Errorf("malformed gh-as-bot block in %s: found %q without %q", rcPath, begin, end)
+		}
+		ei += bi + len(end)
+		// Drop a single trailing newline after the old block so replacement
+		// doesn't accumulate blank lines across runs.
+		if ei < len(existing) && existing[ei] == '\n' {
+			ei++
+		}
+		out = existing[:bi] + block + "\n" + existing[ei:]
+	} else {
+		sep := ""
+		if existing != "" && !strings.HasSuffix(existing, "\n") {
+			sep = "\n"
+		}
+		lead := "\n"
+		if existing == "" {
+			lead = ""
+		}
+		out = existing + sep + lead + block + "\n"
+	}
+
+	if dir := filepath.Dir(rcPath); dir != "" {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return err
+		}
+	}
+	return os.WriteFile(rcPath, []byte(out), 0o644)
 }
 
 func shellBasename() string {

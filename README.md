@@ -11,7 +11,7 @@ gh extension install enthus-appdev/gh-as-bot
 gh as-bot setup
 ```
 
-`gh as-bot setup` walks you through creating the GitHub App, points you at the right URLs with the required permissions called out, verifies your credentials by minting a real installation token, optionally stashes the private key in your macOS keychain, and prints the exact shell-profile snippet to paste into `~/.zshrc`.
+`gh as-bot setup` walks you through creating the GitHub App, points you at the right URLs with the required permissions called out, verifies your credentials by minting a real installation token, optionally stashes the private key in your macOS keychain, and — with your confirmation — writes the export line straight into your shell profile (it detects the rc but lets you correct the path, since `$SHELL` can lie). The lines go in a marked `# >>> gh-as-bot:<context> >>>` block, so re-running setup updates that block in place and multiple contexts coexist without clobbering each other.
 
 After setup, verify with:
 
