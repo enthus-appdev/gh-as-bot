@@ -66,7 +66,11 @@ export GH_AS_BOT_PRIVATE_KEY="$(security find-generic-password -s gh-as-bot -w |
 export GH_AS_BOT_PRIVATE_KEY="$(op read 'op://Private/gh-as-bot/private-key')"
 ```
 
-If you stashed the key into the keychain yourself (rather than via `gh as-bot setup`), store it base64-encoded so the read above works: `base64 < your-app.pem | security add-generic-password -s gh-as-bot -a default -U -w "$(cat -)"`.
+If you stashed the key into the keychain yourself (rather than via `gh as-bot setup`), store it base64-encoded so the read above works. `tr -d '\n'` guards against base64 implementations that wrap long lines (wrapped output would reintroduce the newline that breaks `security -w`):
+
+```bash
+security add-generic-password -s gh-as-bot -a default -U -w "$(base64 < your-app.pem | tr -d '\n')"
+```
 
 ## One App per person (recommended)
 
