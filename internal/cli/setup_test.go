@@ -3,8 +3,12 @@ package cli
 import (
 	"bytes"
 	"encoding/base64"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/enthus-appdev/gh-as-bot/internal/app"
 )
 
 func TestSetup_AbortsOnEmptyAppID(t *testing.T) {
@@ -30,10 +34,10 @@ func TestSetup_HeaderAndStepsPrinted(t *testing.T) {
 }
 
 func TestSetup_ReadsKeyPathBeforeVerifying(t *testing.T) {
-	// App ID + installation ID + nonexistent key path. The key read
-	// should fail with a clear file-not-found message before we hit
-	// any GitHub call.
-	input := "12345\n67890\n/definitely/not/a/real/path.pem\n"
+	// Blank context + App ID + installation ID + nonexistent key path. The
+	// key read should fail with a clear file-not-found message before we
+	// hit any GitHub call.
+	input := "\n12345\n67890\n/definitely/not/a/real/path.pem\n"
 	var stdout, stderr bytes.Buffer
 	code := runSetup(strings.NewReader(input), &stdout, &stderr)
 	if code != 1 {
@@ -77,11 +81,38 @@ func TestKeychainRoundTrip(t *testing.T) {
 		t.Errorf("round-trip mismatch through encodeKeyForKeychain")
 	}
 
-	if !strings.Contains(keychainKeyRef, "/usr/bin/base64 -D") {
-		t.Errorf("keychainKeyRef must decode with the pinned BSD base64; got %q", keychainKeyRef)
+	ref := keychainServiceRef("gh-as-bot")
+	if !strings.Contains(ref, "/usr/bin/base64 -D") {
+		t.Errorf("keychainServiceRef must decode with the pinned BSD base64; got %q", ref)
 	}
-	if !strings.Contains(keychainKeyRef, "-s gh-as-bot ") {
-		t.Errorf("keychainKeyRef must read the gh-as-bot service; got %q", keychainKeyRef)
+	if !strings.Contains(ref, "-s 'gh-as-bot'") {
+		t.Errorf("keychainServiceRef must read the gh-as-bot service; got %q", ref)
+	}
+}
+
+func TestSetup_WritesNamedContext(t *testing.T) {
+	t.Setenv("GH_AS_BOT_CONFIG", filepath.Join(t.TempDir(), "config.json"))
+	pem := filepath.Join(t.TempDir(), "key.pem")
+	if err := os.WriteFile(pem, []byte("dummy-pem"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// context name, app id, installation id, key path, keychain "n".
+	// The context is persisted before the network verify, so even though
+	// verify fails offline, the entry must be on disk.
+	input := "org\n12345\n67890\n" + pem + "\nn\n"
+	var out, errb bytes.Buffer
+	_ = runSetup(strings.NewReader(input), &out, &errb)
+
+	cf, err := app.LoadContextFile()
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	e, ok := cf.Contexts["org"]
+	if !ok || e.AppID != "12345" || e.InstallationID != "67890" {
+		t.Errorf("context not written correctly: %+v (ok=%v)", e, ok)
+	}
+	if !strings.Contains(out.String(), `wrote context "org"`) {
+		t.Errorf("expected confirmation of context write; got: %q", out.String())
 	}
 }
 
