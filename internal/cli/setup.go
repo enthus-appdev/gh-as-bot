@@ -3,6 +3,7 @@ package cli
 import (
 	"bufio"
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"io"
@@ -65,7 +66,14 @@ func (s *setup) run() int {
 	_, _ = fmt.Fprintln(s.out, "  Open this URL (creates the App under YOUR account):")
 	_, _ = fmt.Fprintln(s.out, "    https://github.com/settings/apps/new")
 	_, _ = fmt.Fprintln(s.out, "")
-	_, _ = fmt.Fprintln(s.out, "  Suggested name: <your-username>-claude")
+	_, _ = fmt.Fprintln(s.out, "  Suggested name: <your-username>-claude  (must be globally unique)")
+	_, _ = fmt.Fprintln(s.out, "")
+	_, _ = fmt.Fprintln(s.out, "  Required form fields (GitHub blocks save until these are set):")
+	_, _ = fmt.Fprintln(s.out, "    - Homepage URL: any valid URL incl. scheme, e.g. https://example.com")
+	_, _ = fmt.Fprintln(s.out, "      (cosmetic for our use — it just has to parse as a URL)")
+	_, _ = fmt.Fprintln(s.out, "    - Uncheck \"Request user authorization (OAuth) during installation\".")
+	_, _ = fmt.Fprintln(s.out, "      Leaving it checked forces a Callback URL we don't use — gh-as-bot")
+	_, _ = fmt.Fprintln(s.out, "      authenticates as an App installation, not via the OAuth user flow.")
 	_, _ = fmt.Fprintln(s.out, "")
 	_, _ = fmt.Fprintln(s.out, "  Required Repository permissions:")
 	_, _ = fmt.Fprintln(s.out, "    - Pull requests:  Read & write   (post reviews / review comments)")
@@ -137,7 +145,7 @@ func (s *setup) run() int {
 			} else {
 				_, _ = fmt.Fprintln(s.out, "  ✓ saved to keychain (service=gh-as-bot, account=default)")
 				_, _ = fmt.Fprintln(s.out, "  You can now safely delete the .pem file from disk.")
-				keyRef = `$(security find-generic-password -s gh-as-bot -w)`
+				keyRef = keychainKeyRef
 			}
 		} else {
 			_, _ = fmt.Fprintln(s.out, "  Skipped — env will reference the .pem path directly.")
@@ -182,14 +190,45 @@ func (s *setup) requirePrompt(label string) (string, error) {
 	return v, nil
 }
 
+// keychainKeyRef is the shell snippet that reads the stored key back into
+// GH_AS_BOT_PRIVATE_KEY. The key is stored base64-encoded (see
+// saveToKeychain), so it must be decoded on read. The absolute BSD path
+// `/usr/bin/base64 -D` is pinned deliberately: the `-D` (capital, decode)
+// flag is BSD/macOS-specific, and a Homebrew GNU coreutils `base64` earlier
+// in PATH would reject it (GNU uses `-d`) and silently yield an empty key.
+// This snippet is only ever emitted on darwin.
+const keychainKeyRef = `$(security find-generic-password -s gh-as-bot -w | /usr/bin/base64 -D)`
+
+// encodeKeyForKeychain is the single encoder for the keychain write path —
+// the production code and its test both go through this, so the test can't
+// pass while the real path regresses. base64 collapses a multi-line PEM to
+// one newline-free line (Go's StdEncoding never wraps), which is what makes
+// the round-trip work; see saveToKeychain.
+func encodeKeyForKeychain(pem []byte) string {
+	return base64.StdEncoding.EncodeToString(pem)
+}
+
 // saveToKeychain stores the PEM under service=gh-as-bot account=default.
 // `-U` upserts, so re-running setup overwrites stale keys cleanly.
+//
+// The PEM is base64-encoded before storage. A raw multi-line PEM is a
+// trap: macOS `security ... -w` hex-encodes any value containing a
+// newline on read, so a raw PEM round-trips to a hex blob that LoadConfig
+// then mistakes for a file path. base64 collapses the key to a single
+// newline-free line, which `-w` returns verbatim. keychainKeyRef decodes it.
+//
+// The encoded key is passed as an argv element to `security`. That is
+// briefly visible via `ps` to other local users (CWE-214); we accept it:
+// this is a single-user dev tool, `security` has no scriptable stdin-password
+// mode, and the alternative (a Cgo keychain library) would break the
+// project's zero-dependency guarantee.
 func saveToKeychain(pem []byte) error {
+	encoded := encodeKeyForKeychain(pem)
 	cmd := exec.Command("security", "add-generic-password",
 		"-s", "gh-as-bot",
 		"-a", "default",
 		"-U",
-		"-w", string(pem),
+		"-w", encoded,
 	)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
