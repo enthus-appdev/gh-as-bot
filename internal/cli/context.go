@@ -28,15 +28,11 @@ func keychainService(contextName string) string {
 	return "gh-as-bot-" + contextName
 }
 
-// keychainServiceRef is the shell snippet that reads a base64-encoded key
-// from a keychain service and decodes it. The absolute BSD path
-// `/usr/bin/base64 -D` is pinned: the `-D` decode flag is BSD/macOS-specific,
-// and a Homebrew GNU coreutils `base64` earlier in PATH would reject it (GNU
-// uses `-d`) and silently yield an empty key. The service is single-quoted as
-// defense-in-depth since this snippet is meant to be eval'd by a shell
-// (context names are already validated to a shell-safe charset).
+// keychainServiceRef is a static shell-safe reference. gh-as-bot resolves it
+// only when it needs a token, so starting an unrelated shell never touches the
+// user's keychain.
 func keychainServiceRef(service string) string {
-	return fmt.Sprintf(`$(security find-generic-password -s '%s' -w | /usr/bin/base64 -D)`, service)
+	return app.KeychainRef(service)
 }
 
 func runContext(ctxName string, args []string, stdout, stderr io.Writer) int {
@@ -167,9 +163,8 @@ func contextExport(args []string, stdout, stderr io.Writer) int {
 		_, _ = fmt.Fprintf(stderr, "gh-as-bot: no such context %q\n", name)
 		return 1
 	}
-	// Keychain sourcing is macOS-only (matches setup.go). On other platforms
-	// emit a path placeholder rather than a snippet that references the
-	// unavailable `security` CLI / `base64 -D`.
+	// Keychain references are macOS-only (matches setup.go). On other platforms
+	// emit a path placeholder rather than an unusable keychain reference.
 	if runtime.GOOS == "darwin" {
 		_, _ = fmt.Fprintf(stdout, "export %s=%q\n", app.KeyEnvVar(name), keychainServiceRef(keychainService(name)))
 	} else {

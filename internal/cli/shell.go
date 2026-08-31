@@ -181,8 +181,8 @@ func shellBasename() string {
 
 func bashStyleExport(key, value string, isCommandSub bool) string {
 	if isCommandSub {
-		// Quote command substitutions so the shell defers evaluation
-		// until the variable is read, not at profile load.
+		// Quote command substitutions so whitespace and newlines remain one value.
+		// Shells still evaluate the command when the profile is sourced.
 		return fmt.Sprintf(`export %s="%s"`, key, value)
 	}
 	return fmt.Sprintf("export %s=%s", key, value)

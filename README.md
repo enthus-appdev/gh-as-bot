@@ -56,9 +56,9 @@ gh as-bot help
 |----------|-------------|
 | `GH_AS_BOT_APP_ID` | Numeric App ID from the GitHub App settings page (legacy single-App mode) |
 | `GH_AS_BOT_INSTALLATION_ID` | Numeric installation ID for the org/account where the App is installed (legacy single-App mode) |
-| `GH_AS_BOT_PRIVATE_KEY` | Either inline PEM contents (starting with `-----BEGIN`) or a path to a `.pem` file (legacy single-App mode) |
+| `GH_AS_BOT_PRIVATE_KEY` | Inline PEM, a `.pem` path, or a `keychain:<service>` reference (legacy single-App mode) |
 | `GH_AS_BOT_CONTEXT` | Active context name when `--context` is not passed (see [Contexts](#contexts-multiple-identities)) |
-| `GH_AS_BOT_PRIVATE_KEY_<NAME>` | Per-context private key (PEM or path), where `<NAME>` is the upper-cased context name |
+| `GH_AS_BOT_PRIVATE_KEY_<NAME>` | Per-context private key (PEM, path, or `keychain:<service>` reference), where `<NAME>` is the upper-cased context name |
 | `GH_AS_BOT_CONFIG` | Optional; config file path (default `~/.config/gh-as-bot/config.json`) |
 | `GITHUB_API_URL` | Optional; override API base for GHES |
 
@@ -71,7 +71,7 @@ Recommended sourcing patterns for the private key (don't keep `.pem` on disk in 
 # many), which would otherwise round-trip to garbage. `/usr/bin/base64` is
 # pinned because the BSD `-D` decode flag differs from GNU coreutils' `-d`;
 # a Homebrew GNU base64 ahead in PATH would otherwise silently yield an empty key.
-export GH_AS_BOT_PRIVATE_KEY="$(security find-generic-password -s gh-as-bot -w | /usr/bin/base64 -D)"
+export GH_AS_BOT_PRIVATE_KEY="keychain:gh-as-bot"
 
 # 1Password CLI
 export GH_AS_BOT_PRIVATE_KEY="$(op read 'op://Private/gh-as-bot/private-key')"
@@ -110,11 +110,15 @@ gh as-bot context export org
 `gh as-bot context export <name>` emits:
 
 ```bash
-export GH_AS_BOT_PRIVATE_KEY_ORG="$(security find-generic-password -s 'gh-as-bot-org' -w | base64 -D)"
+export GH_AS_BOT_PRIVATE_KEY_ORG="keychain:gh-as-bot-org"
 export GH_AS_BOT_CONTEXT="org"
 ```
 
-Only the **key** lives in env (resolved from the keychain by your shell); `app_id` and `installation_id` live in the non-secret config file. **Never put a private key (PEM) in `config.json`** — it holds App/installation IDs only; keys belong in the keychain or your secrets manager.
+Only a non-secret **key reference** lives in env; gh-as-bot resolves it from
+Keychain when a bot command needs a token. `app_id` and `installation_id` live in
+the non-secret config file. **Never put a private key (PEM) in `config.json`** —
+it holds App/installation IDs only; keys belong in the keychain or your secrets
+manager.
 
 ### Using contexts
 

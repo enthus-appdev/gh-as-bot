@@ -57,6 +57,19 @@ func TestLoadConfig_FromPath(t *testing.T) {
 	}
 }
 
+func TestKeychainRef(t *testing.T) {
+	if got := KeychainRef("gh-as-bot-org"); got != "keychain:gh-as-bot-org" {
+		t.Fatalf("KeychainRef = %q", got)
+	}
+}
+
+func TestLoadKey_EmptyKeychainService(t *testing.T) {
+	_, err := loadKey("keychain:")
+	if err == nil || !strings.Contains(err.Error(), "service is empty") {
+		t.Fatalf("expected empty-service error, got %v", err)
+	}
+}
+
 func TestLoadConfig_MissingReportsAll(t *testing.T) {
 	isolateConfig(t)
 	t.Setenv("GH_AS_BOT_APP_ID", "")
@@ -93,6 +106,8 @@ func clearLegacyEnv(t *testing.T) {
 	t.Setenv("GH_AS_BOT_APP_ID", "")
 	t.Setenv("GH_AS_BOT_INSTALLATION_ID", "")
 	t.Setenv("GH_AS_BOT_PRIVATE_KEY", "")
+	t.Setenv("GH_AS_BOT_PRIVATE_KEY_ORG", "")
+	t.Setenv("GH_AS_BOT_PRIVATE_KEY_PERSONAL", "")
 	t.Setenv("GH_AS_BOT_CONTEXT", "")
 }
 

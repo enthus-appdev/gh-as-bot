@@ -82,11 +82,11 @@ func TestKeychainRoundTrip(t *testing.T) {
 	}
 
 	ref := keychainServiceRef("gh-as-bot")
-	if !strings.Contains(ref, "/usr/bin/base64 -D") {
-		t.Errorf("keychainServiceRef must decode with the pinned BSD base64; got %q", ref)
+	if ref != "keychain:gh-as-bot" {
+		t.Errorf("keychainServiceRef must be a lazy service reference; got %q", ref)
 	}
-	if !strings.Contains(ref, "-s 'gh-as-bot'") {
-		t.Errorf("keychainServiceRef must read the gh-as-bot service; got %q", ref)
+	if strings.Contains(ref, "$(") {
+		t.Errorf("keychainServiceRef must not query Keychain during shell startup; got %q", ref)
 	}
 }
 
