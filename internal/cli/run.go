@@ -29,12 +29,12 @@ Selecting an identity:
 
 Context env (per context <name>, uppercased):
   GH_AS_BOT_CONTEXT           Active context when --context is not passed
-  GH_AS_BOT_PRIVATE_KEY_<NAME> PEM contents OR path for that context's key
+  GH_AS_BOT_PRIVATE_KEY_<NAME> PEM, path, or keychain:<service> reference
 
 Legacy env (no contexts defined):
   GH_AS_BOT_APP_ID            Numeric App ID
   GH_AS_BOT_INSTALLATION_ID   Numeric installation ID
-  GH_AS_BOT_PRIVATE_KEY       PEM contents OR path to .pem file
+  GH_AS_BOT_PRIVATE_KEY       PEM, path, or keychain:<service> reference
 
 Optional env:
   GITHUB_API_URL              Override API base (defaults to api.github.com)

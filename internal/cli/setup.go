@@ -281,8 +281,8 @@ func encodeKeyForKeychain(pem []byte) string {
 // trap: macOS `security ... -w` hex-encodes any value containing a
 // newline on read, so a raw PEM round-trips to a hex blob that LoadConfig
 // then mistakes for a file path. base64 collapses the key to a single
-// newline-free line, which `-w` returns verbatim; keychainServiceRef
-// decodes it with the pinned `/usr/bin/base64 -D`.
+// newline-free line, which `-w` returns verbatim; the app decodes it when a bot
+// command resolves the static keychain service reference.
 //
 // The encoded key is passed as an argv element to `security`. That is
 // briefly visible via `ps` to other local users (CWE-214); we accept it:

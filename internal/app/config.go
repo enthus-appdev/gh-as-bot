@@ -1,11 +1,16 @@
 package app
 
 import (
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
+	"runtime"
 	"strings"
 )
+
+const keychainRefPrefix = "keychain:"
 
 // Config carries the GitHub App credentials needed to mint an
 // installation access token. It is populated from environment variables
@@ -82,8 +87,9 @@ func ResolveConfig(flagContext string) (*Config, error) {
 }
 
 // loadLegacyConfig is the original env-only behavior, preserved verbatim:
-// GH_AS_BOT_PRIVATE_KEY accepts inline PEM (starts with "-----BEGIN") or a
-// path to a .pem file. Missing values are reported by env-var name.
+// GH_AS_BOT_PRIVATE_KEY accepts inline PEM (starts with "-----BEGIN"), a path
+// to a .pem file, or a macOS keychain service reference. Missing values are
+// reported by env-var name.
 func loadLegacyConfig() (*Config, error) {
 	cfg := &Config{
 		AppID:          os.Getenv("GH_AS_BOT_APP_ID"),
@@ -115,7 +121,16 @@ func loadLegacyConfig() (*Config, error) {
 	return cfg, nil
 }
 
+// KeychainRef returns a non-secret reference that can safely live in a shell
+// profile. The key is resolved only when gh-as-bot needs to mint a token.
+func KeychainRef(service string) string {
+	return keychainRefPrefix + service
+}
+
 func loadKey(value string) ([]byte, error) {
+	if strings.HasPrefix(value, keychainRefPrefix) {
+		return loadKeychainKey(strings.TrimPrefix(value, keychainRefPrefix))
+	}
 	if strings.HasPrefix(strings.TrimSpace(value), "-----BEGIN") {
 		return []byte(value), nil
 	}
@@ -127,4 +142,26 @@ func loadKey(value string) ([]byte, error) {
 		return nil, errors.New("private key file is empty")
 	}
 	return b, nil
+}
+
+func loadKeychainKey(service string) ([]byte, error) {
+	if service == "" {
+		return nil, errors.New("macOS keychain service is empty")
+	}
+	if runtime.GOOS != "darwin" {
+		return nil, errors.New("macOS keychain references are supported only on darwin")
+	}
+
+	encoded, err := exec.Command("/usr/bin/security", "find-generic-password", "-s", service, "-w").Output()
+	if err != nil {
+		return nil, fmt.Errorf("read macOS keychain service %q: %w", service, err)
+	}
+	key, err := base64.StdEncoding.DecodeString(strings.TrimSpace(string(encoded)))
+	if err != nil {
+		return nil, fmt.Errorf("decode macOS keychain service %q: %w", service, err)
+	}
+	if len(key) == 0 {
+		return nil, errors.New("macOS keychain private key is empty")
+	}
+	return key, nil
 }

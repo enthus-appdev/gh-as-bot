@@ -139,8 +139,11 @@ func TestContext_Export(t *testing.T) {
 	}
 	// Keychain sourcing is macOS-only; other platforms get a path placeholder.
 	if runtime.GOOS == "darwin" {
-		if !strings.Contains(s, "base64 -D") || !strings.Contains(s, "gh-as-bot-org") {
+		if !strings.Contains(s, `"keychain:gh-as-bot-org"`) {
 			t.Errorf("darwin export missing keychain snippet: %q", s)
+		}
+		if strings.Contains(s, "$(") {
+			t.Errorf("darwin export must not query Keychain during shell startup: %q", s)
 		}
 	} else {
 		if !strings.Contains(s, "/path/to/org-private-key.pem") {
